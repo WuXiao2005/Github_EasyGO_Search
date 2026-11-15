@@ -1,4 +1,4 @@
-# Github-EasyGO・GitHub 翻译搜・零基础小白直接上手
+# Github_EasyGO_Search・GitHub 翻译搜・零基础小白直接上手
 
 # Github-EasyGO · Search GitHub by Translation · Ready to use out of the box
 
