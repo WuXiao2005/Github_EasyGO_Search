@@ -7,6 +7,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import gitpull
+from . import i18n
 from .searchapp import SearchService
 from .webui import PAGE
 
@@ -18,7 +19,12 @@ class App:
         self.cfg = cfg
         self.log = log
         self.svc = SearchService(cfg, log)
-        self.html = PAGE.replace("%%MODEL%%", cfg["model"]).encode("utf-8")
+        self.html = PAGE.replace("%%MODEL%%", cfg["model"])
+
+    def render(self, lang=""):
+        """按语言把首页拼出来（语言包只影响这次响应，不进缓存）。"""
+        payload = json.dumps(i18n.payload(lang), ensure_ascii=False)
+        return self.html.replace("%%I18N%%", payload).encode("utf-8")
 
 
 def make_handler(app):
@@ -76,7 +82,7 @@ def make_handler(app):
             path, qs = parsed.path, urllib.parse.parse_qs(parsed.query)
             try:
                 if path in ("/", "/index.html"):
-                    body = app.html
+                    body = app.render((qs.get("lang") or [""])[0])
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))

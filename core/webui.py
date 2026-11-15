@@ -31,6 +31,12 @@ a{color:inherit;text-decoration:none}
 .modelbtn svg{width:11px;height:11px;flex:none;opacity:.7}
 .modelbtn b{font-weight:550;color:var(--ink);font-family:var(--mono)}
 .modelbtn:hover b{color:var(--accent)}
+.langsel{appearance:none;-webkit-appearance:none;font-family:inherit;font-size:12px;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:4px 26px 4px 10px;background:var(--card) no-repeat right 8px center;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23707a86' stroke-width='2.4'><path d='M6 9l6 6 6-6'/></svg>");
+  background-size:11px 11px;cursor:pointer;transition:border-color .15s,color .15s}
+.langsel:hover{border-color:#bfdcd7;color:var(--accent)}
+.langsel:focus{outline:none;border-color:#bfdcd7}
 h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spacing:-.2px}
 .sub{color:var(--muted);font-size:14px;margin:0 0 20px}
 .feedrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 18px}
@@ -272,6 +278,14 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
       本地实时翻译 · <b id="modelLabel">%%MODEL%%</b>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
     </button>
+    <select class="langsel" id="langSel" title="语言" aria-label="语言">
+      <option value="zh-Hans">简体中文</option>
+      <option value="zh-Hant">繁體中文</option>
+      <option value="ja">日本語</option>
+      <option value="fr">Français</option>
+      <option value="ru">Русский</option>
+      <option value="ko">한국어</option>
+    </select>
   </div>
   <h1>用中文描述你要什么，直接搜英文开源项目</h1>
   <div class="feedrow">
@@ -334,6 +348,8 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
 <div class="toast" id="toast"></div>
 
 <script>
+/* 语言包：服务端按 ?lang= 注入，字典以中文原文为键（见 core/i18n.py） */
+window.__I18N = %%I18N%%;
 const $ = (s) => document.querySelector(s);
 const qEl = $('#q'), goEl = $('#go'), resultsEl = $('#results');
 const statusEl = $('#status'), pillsEl = $('#pills'), listTitle = $('#listTitle');
@@ -1182,6 +1198,99 @@ async function switchModel(name, el){
 modelBtn.addEventListener('click', openModels);
 $('#mrefresh').addEventListener('click', loadModels);
 mmask.addEventListener('click', e => { if (e.target === mmask) mmask.classList.remove('show'); });
+
+/* ===== 多语言：DOM 文案就地替换，不动结构、不动样式 ===== */
+const I18N = window.__I18N || {lang:'zh-Hans', dict:{}, prefix:{}, suffix:{}, labels:{}};
+const I18N_ON = Object.keys(I18N.dict || {}).length > 0;
+const i18nNorm = (s) => (s || '').replace(/\s+/g, '');
+const I18N_ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
+
+/* 动态句子的尾巴（数量+量词、点号后的小尾巴）单独换，例如 "1,253 个" 的 "个" */
+function i18nTail(rest){
+  const suf = I18N.suffix || {};
+  let out = rest;
+  Object.keys(suf).forEach(unit => {
+    const re = new RegExp('(\\d[\\d,]*)\\s*' + unit, 'g');
+    out = out.replace(re, '$1' + suf[unit]);
+  });
+  return out.split('·').map(seg => {
+    const s = seg.trim();
+    if (!s) return seg;
+    const t = I18N.dict[i18nNorm(s)];
+    return t ? (' ' + t) : seg;
+  }).join(' · ');
+}
+
+function i18nText(raw){
+  if (!I18N_ON || !raw) return null;
+  const key = i18nNorm(raw);
+  if (!key) return null;
+  const hit = I18N.dict[key];
+  if (hit) return hit;
+  const pre = I18N.prefix || {};
+  for (const p in pre){
+    if (key.startsWith(i18nNorm(p))){
+      const body = raw.trim();
+      if (body.startsWith(p)) return (pre[p] + ' ' + i18nTail(body.slice(p.length))).replace(/\s+/g, ' ').trim();
+    }
+  }
+  return null;
+}
+
+function i18nTranslateDom(){
+  if (!I18N_ON) return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(n => {
+    const tag = n.parentNode && n.parentNode.nodeName;
+    if (tag === 'SCRIPT' || tag === 'STYLE') return;
+    const v = i18nText(n.nodeValue);
+    if (v !== null && v !== n.nodeValue) n.nodeValue = v;
+  });
+  document.body.querySelectorAll('*').forEach(el => {
+    I18N_ATTRS.forEach(a => {
+      const cur = el.getAttribute && el.getAttribute(a);
+      if (!cur) return;
+      const v = i18nText(cur);
+      if (v !== null && v !== cur) el.setAttribute(a, v);
+    });
+  });
+  const t = i18nText(document.title);
+  if (t) document.title = t;
+}
+
+let i18nTimer = null;
+function i18nSchedule(){
+  if (!I18N_ON) return;
+  clearTimeout(i18nTimer);
+  i18nTimer = setTimeout(i18nTranslateDom, 60);
+}
+
+/* 切换语言：写 localStorage 并刷新页面（模型产出的语言也要跟着变，所以整页重载最稳） */
+function i18nApply(code){
+  try{ localStorage.setItem('digest_lang', code); }catch(e){}
+  const url = new URL(location.href);
+  if (code === 'zh-Hans') url.searchParams.delete('lang');
+  else url.searchParams.set('lang', code);
+  location.href = url.toString();
+}
+
+(function i18nBoot(){
+  const sel = document.getElementById('langSel');
+  if (sel){
+    sel.value = I18N.lang || 'zh-Hans';
+    sel.addEventListener('change', () => i18nApply(sel.value));
+  }
+  let saved = null;
+  try{ saved = localStorage.getItem('digest_lang'); }catch(e){}
+  const inUrl = new URL(location.href).searchParams.get('lang');
+  if (!inUrl && saved && saved !== 'zh-Hans'){ i18nApply(saved); return; }
+  if (I18N_ON){
+    i18nTranslateDom();
+    new MutationObserver(i18nSchedule).observe(document.body, {childList:true, subtree:true, characterData:true});
+  }
+})();
 
 /* 启动 */
 const params = new URLSearchParams(location.search);
