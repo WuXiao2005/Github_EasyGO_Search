@@ -46,8 +46,8 @@ git add -A
 git status --short          # 看一眼清单：应当只有源码、README、config.example.json、.gitignore
 git commit -m "feat: 中文导览 GitHub（本地模型汉化 + 一键拉取）"
 
-# 先在 GitHub 网页建一个空仓库（不要勾选 README / .gitignore / LICENSE）
-git remote add origin https://github.com/WuXiao2005/github-weekly-digest.git
+# 仓库地址换成自己的（当前：https://github.com/WuXiao2005/Github-EasyGO）
+git remote add origin https://github.com/WuXiao2005/Github-EasyGO.git
 git push -u origin main
 ```
 
