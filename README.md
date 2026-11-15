@@ -5,7 +5,42 @@
 每天抓一次 GitHub 的**周增量榜**（本地快照差分算出，不抓 trending 页面），交给本机 4B 小模型汉化成
 能直接读的通俗中文，产出一份**搜索式内外两层浏览的日报**；再按周聚合出一份 **Obsidian 可用的 Markdown 周报**。
 
-全程不调用任何云端模型服务——汉化推理 100% 由本地大模型完成，但你得在本机下载 Ollama 然后安装一个对应你的主机性能合适的本地模型。
+全程不调用任何云端模型服务——汉化推理 100% 由本地大模型完成。
+
+## 快速开始
+
+前置条件：
+
+- Python 3.9+（安装时勾上 Add to PATH）
+- Ollama（可选；不装的话中文搜索、判断卡、代码地图都能用，但 README 翻译和中文解读会显示“本地模型不可用”）
+- git（可选；不装就不能用“一键拉取到本地”，只能网页下载 ZIP）
+
+1. 下载仓库
+
+   git clone https://github.com/WuXiao2005/Github-EasyGO.git
+   cd Github-EasyGO
+
+2. 装 Ollama 并拉一个适合本机显存的模型（4B 级约 2.5 GB）
+
+   ollama pull qwen3:4b
+
+   Windows 装完确认托盘里的 Ollama 正在运行；默认地址 127.0.0.1:11434，改过端口就同步改 config.json 的 ollama_url。
+
+3. 先启动一次（首次会自动从 config.example.json 生成 config.json）
+
+   python run.py web
+
+   浏览器打开 http://127.0.0.1:8790/
+
+4. 把模型名对齐：编辑 config.json 的 `model`，填成 `ollama list` 里真实存在的名字。
+   示例文件里那个名字是作者本机的模型，你机器上没有时不改会一直提示“本地模型不可用”。
+
+两个强烈建议：
+
+- 填 `token`：匿名访问 GitHub API 只有 60 次/小时，一次搜索耗 1 次、一次详情耗 2 次；填 Personal Access Token 才能放开用
+- 配代理：国内直连 github.com 经常被重置（clone 和 API 都会失败）
+
+日报 / 周报是命令行模式，项目本身不带定时器，想每天自动跑需要自己配 Windows 任务计划或 cron 调用 `python run.py daily`；首次要预热 7 天才出真实周增量。
 
 ## 为什么不用抓 trending 页面
 
