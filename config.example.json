@@ -1,0 +1,17 @@
+{
+  "token": "",
+  "model": "maternion/spark-x2.5-heretic:4b",
+  "ollama_url": "http://127.0.0.1:11434",
+  "top_n": 8,
+  "pool_new_repos": 50,
+  "pool_active_repos": 50,
+  "new_repo_min_stars": 5,
+  "active_repo_min_stars": 2000,
+  "window_days": 7,
+  "readme_chars": 2500,
+  "images_per_repo": 2,
+  "out_dir": "out",
+  "data_dir": "data",
+  "timeout": 30,
+  "download_dir": "repos"
+}

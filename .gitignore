@@ -1,0 +1,8 @@
+# 运行时产物：日报/周报输出、检索缓存、README 翻译缓存
+out/
+data/
+*.pyc
+__pycache__/
+
+# 本机配置（含本地路径，将来可能填 GITHUB_TOKEN）：仓库里只放示例文件
+config.json
