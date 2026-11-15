@@ -293,7 +293,7 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
       <button class="feedtab active" type="button" data-feed="hot" role="tab">热榜</button>
       <button class="feedtab" type="button" data-feed="weekly" role="tab">周榜</button>
     </div>
-    <span class="feedhint" id="feedHint">按累计星标排序 · 点任意项目看中文解析</span>
+    <span class="feedhint" id="feedHint">按累计星标排序 · 点任意项目看翻译解析</span>
   </div>
 
   <div class="searchbox">
@@ -431,7 +431,7 @@ async function loadFeed(feed, page){
     resultsEl.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto 12px"></div>正在加载…</div>';
   }
   try{
-    const d = await (await fetch(FEED_API[feed] + '?page=' + page)).json();
+    const d = await (await fetch(FEED_API[feed] + '?page=' + page + '&lang=' + encodeURIComponent(I18N.lang))).json();
     if (d.error){ resultsEl.innerHTML = '<div class="empty err">' + esc(d.error) + '</div>'; return; }
     const list = d.results || [];
     const before = state.items.length;
@@ -471,7 +471,7 @@ async function doSearch(){
   resultsEl.innerHTML = '<div class="empty"><div class="spinner" style="margin:0 auto 12px"></div>正在翻译检索词并搜索 GitHub…</div>';
   setStatus(''); pillsEl.innerHTML = ''; resultTitle('搜索结果', '');
   try{
-    const d = await (await fetch('/api/search?q=' + encodeURIComponent(q) + '&page=1')).json();
+    const d = await (await fetch('/api/search?q=' + encodeURIComponent(q) + '&page=1&lang=' + encodeURIComponent(I18N.lang))).json();
     if (d.error){ resultsEl.innerHTML = '<div class="empty err">' + esc(d.error) + '</div>'; return; }
     state.mode = 'search';
     state.total = d.total || 0;
@@ -497,9 +497,9 @@ async function loadMore(){
   try{
     let d;
     if (state.mode === 'search'){
-      d = await (await fetch('/api/search?q=' + encodeURIComponent(state.q) + '&page=' + page)).json();
+      d = await (await fetch('/api/search?q=' + encodeURIComponent(state.q) + '&page=' + page + '&lang=' + encodeURIComponent(I18N.lang))).json();
     } else {
-      d = await (await fetch(FEED_API[state.feed] + '?page=' + page)).json();
+      d = await (await fetch(FEED_API[state.feed] + '?page=' + page + '&lang=' + encodeURIComponent(I18N.lang))).json();
     }
     if (d.error){ moreEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; return; }
     const list = d.results || [];
@@ -564,7 +564,7 @@ async function briefsBatch(items){
     const r = await fetch('/api/briefs', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({items: items.map(x => ({
+      body: JSON.stringify({lang: I18N.lang, items: items.map(x => ({
         full_name: x.full_name, description: x.description, language: x.language
       }))})
     });

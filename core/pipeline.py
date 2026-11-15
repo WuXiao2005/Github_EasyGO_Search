@@ -110,8 +110,12 @@ def select(delta_pool, new_pool, active_pool, top_n):
 SAFE = re.compile(r"[^a-zA-Z0-9_\-]")
 
 
-def signature(meta, readme, model):
-    raw = f"{meta['full_name']}|{meta['stars'] // 500}|{model}|{readme[:1200]}"
+def signature(meta, readme, model, lang="zh-Hans"):
+    """译文指纹：仓库 + 星标量级 + 模型 + README 摘要 + 目标语言。
+
+    lang 必须进来，否则「日语页」会命中中文译文缓存，模型也就不重写了。
+    """
+    raw = f"{meta['full_name']}|{meta['stars'] // 500}|{model}|{lang}|{readme[:1200]}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 

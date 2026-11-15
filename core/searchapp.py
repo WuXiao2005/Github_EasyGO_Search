@@ -68,6 +68,21 @@ STREAM_SYSTEM = """你是一名给中国程序员讲开源项目的中文编辑�
 5. 列表类字段每条单独一行，以 "- " 开头。
 6. 不要输出 markdown 代码块（```），命令直接用单反引号包住。"""
 
+# 非简体中文时用的系统提示：结构标记仍是中文，正文换成目标语言
+STREAM_SYSTEM_ML = """你是一名讲开源项目的技术编辑。读懂英文 README 后，用通俗准确的语言重写，
+让刚入门的人也能看明白这个项目是干什么的、怎么用、值不值得学。
+
+目标语言：{lang}。所有字段正文都必须用{lang}写；只有【字段名】这个结构标记保持中文原样，它不会被用户看到。
+
+硬性要求：
+1. 严格按用户给的【字段名】格式输出纯文本，每个字段独立成段，不要输出 JSON、不要用 markdown 代码块。
+2. 专有名词、库名、命令、文件路径、代码片段保持英文原样，不要硬译成{lang}。
+3. 不编造 README 里没有的功能、数字、作者信息；看不清就写得更概括。
+4. 语气像技术博客，不要营销腔。
+5. 列表类字段每条单独一行，以 "- " 开头。
+6. 不要输出 markdown 代码块（```），命令直接用单反引号包住。
+7. 除【字段名】和必须保留的英文术语外，正文里不要出现中文句子。"""
+
 STREAM_PROMPT = """请根据下面的仓库信息，按指定格式输出中文解读。
 
 仓库：{full_name}
@@ -102,7 +117,116 @@ README 摘录（可能被截断）：
 - 英文 | 中文 | 一句话解释（2-5 条）
 """
 
+# 非简体中文时的用户提示：字段标记不变，字数改成"字符"，正文语言交给系统提示
+STREAM_PROMPT_ML = """请根据下面的仓库信息，按指定格式输出{lang}解读。
+
+仓库：{full_name}
+官方描述：{description}
+主语言：{language}
+累计星数：{stars}
+Topics：{topics}
+
+目录概览（顶层目录及文件数）：
+{tree}
+
+README 摘录（可能被截断）：
+---
+{readme}
+---
+
+严格按下面的格式输出，一个字段都不要少（【字段名】保持中文原样，正文全部用{lang}写）：
+
+【速览】一句话说清它是什么，不超过 40 个字符。
+【它是什么】2-3 句，说清定位和形态（库/工具/模板/数据集），不超过 160 个字符。
+【解决什么问题】说清替代了什么旧做法或填补了什么空缺，不超过 140 个字符。
+【核心机制】内部怎么做到的，用打比方的方式讲，不超过 180 个字符。
+【主要功能】
+- 3-6 条，每条不超过 40 个字符，动词开头
+【项目结构】
+- 从目录概览里挑 3-8 个重要目录，格式：src/ ：存放核心实现
+【快速上手】给出最关键的一两条命令（用单反引号包裹，禁止用三反引号代码块），再用{lang}说步骤，不超过 160 个字符。
+【值得学的点】
+- 3 条，每条不超过 40 个字符
+【适合谁】什么阶段、什么方向的人适合看，不超过 50 个字符。
+【术语表】
+- 英文 | {lang} | 一句话解释（2-5 条）
+"""
+
+
+def stream_system(lang):
+    """详情解读的系统提示：简体中文保持原文案，其它语言要求按目标语言写。"""
+    code = i18n.normalize(lang)
+    if code == "zh-Hans":
+        return STREAM_SYSTEM
+    return STREAM_SYSTEM_ML.format(lang=i18n.lang_name(code))
+
+
+def stream_prompt(lang):
+    """详情解读的用户提示模板（模板里还有 {full_name} 等数据占位符，只用 replace 换语言名）。"""
+    code = i18n.normalize(lang)
+    if code == "zh-Hans":
+        return STREAM_PROMPT
+    return STREAM_PROMPT_ML.replace("{lang}", i18n.lang_name(code))
+
 CJK = re.compile(r"[\u4e00-\u9fff]")
+KANA = re.compile(r"[\u3040-\u30ff]")
+HANGUL = re.compile(r"[\uac00-\ud7af]")
+CYRILLIC = re.compile(r"[\u0400-\u04ff]")
+
+
+def wrong_language(text, lang):
+    """小模型很容易无视语言指令继续写中文，这里做个粗判，判错就重试。
+
+    简体/繁体都是中文，没法用字符集区分，直接放行。
+    注意：结构标记【速览】…本身就是中文，判语言前先把它们剔掉，否则法语译文会被误判成中文。
+    """
+    code = i18n.normalize(lang)
+    if code in ("zh-Hans", "zh-Hant") or not text:
+        return False
+    probe = re.sub(r"【[^】]{0,20}】", "", text)
+    probe = re.sub(r"「[^」]{0,20}」", "", probe)
+    cjk = len(CJK.findall(probe))
+    if code == "ja":
+        # 日语里汉字多，但必须有假名，否则就是中文
+        return cjk > 12 and len(KANA.findall(probe)) < max(3, cjk // 8)
+    if code == "ko":
+        return len(HANGUL.findall(probe)) < max(3, len(probe) // 20)
+    if code == "ru":
+        return len(CYRILLIC.findall(probe)) < 8 or cjk > 8
+    if code == "fr":
+        return cjk > 8
+    return False
+
+
+def lang_hint(lang):
+    """模型没听话时追加的补救话术。"""
+    name = i18n.lang_name(lang)
+    return (
+        f"\n\n你上一次的输出全是中文，不合格。这次必须整段换成{name}：每个字段的正文都要用{name}写，"
+        f"一个中文句子都不许出现；只有【字段名】这几个结构标记保持中文原样。"
+    )
+
+
+def translate_system(lang):
+    """兜底方案的系统提示：把中文成品整段译成目标语言（比"直接用外语写"好教得多）。"""
+    return (
+        f"你是专业技术译者。把中文的技术解读译成{i18n.lang_name(lang)}。\n"
+        "下面这 10 个方括号标记是格式符号，必须原样保留，一个字都不能改：\n"
+        "【速览】【它是什么】【解决什么问题】【核心机制】【主要功能】【项目结构】【快速上手】【值得学的点】【适合谁】【术语表】\n"
+        "列表项的 '-' 和 术语表里的 '|' 也保持原样。只输出译文本身，不要解释。"
+    )
+
+
+def translate_hint(text, lang):
+    """兜底方案的用户提示：拿模型自己写的中文当原文，翻译一遍。"""
+    return (
+        "下面这段是同一个仓库的中文解读，请逐段翻译，不要重新创作：\n---\n"
+        + (text or "")[:6000]
+        + "\n---\n\n"
+        + f"请译成{i18n.lang_name(lang)}，但【速览】【它是什么】【解决什么问题】【核心机制】【主要功能】"
+        + "【项目结构】【快速上手】【值得学的点】【适合谁】【术语表】这些标记原样保留、不要翻译，"
+        + "列表的 '-' 与术语表的 '|' 也不要改。只输出译文，正文里不要留中文句子。"
+    )
 
 
 class SearchService:
@@ -317,12 +441,12 @@ class SearchService:
         return parse_json_loose(content)
 
     # ---------- 搜索（支持分页） ----------
-    def search(self, q, page=1, limit=20, force=False):
+    def search(self, q, page=1, limit=20, force=False, lang=""):
         q = (q or "").strip()
         if not q:
             return {"error": "查询为空"}
         page = max(1, int(page or 1))
-        qkey = hashlib.sha1(f"{q.lower()}|{page}|{limit}".encode("utf-8")).hexdigest()[:16]
+        qkey = hashlib.sha1(f"{q.lower()}|{page}|{limit}|{i18n.normalize(lang)}".encode("utf-8")).hexdigest()[:16]
         if not force:
             cached = self.store.get_query(qkey)
             if cached:
@@ -351,7 +475,7 @@ class SearchService:
                     "description": clean_text(it.get("description")),
                     "topics": it.get("topics") or [],
                     "updated": it.get("pushed_at") or "",
-                    "brief": self._cached_brief(it.get("full_name")),
+                    "brief": self._cached_brief(it.get("full_name"), lang),
                 }
             )
 
@@ -371,9 +495,9 @@ class SearchService:
         return payload
 
     # ---------- 首页热榜（支持分页） ----------
-    def hot(self, limit=20, page=1):
+    def hot(self, limit=20, page=1, lang=""):
         page = max(1, int(page or 1))
-        key = f"hot|{page}|{limit}"
+        key = f"hot|{page}|{limit}|{i18n.normalize(lang)}"
         cached = self.store.get_query(key, max_age_hours=12)
         if cached:
             cached["cached"] = True
@@ -395,7 +519,7 @@ class SearchService:
                     "language": it.get("language") or "",
                     "description": clean_text(it.get("description")),
                     "topics": it.get("topics") or [],
-                    "brief": self._cached_brief(it.get("full_name")),
+                    "brief": self._cached_brief(it.get("full_name"), lang),
                 }
             )
         payload = {
@@ -408,11 +532,11 @@ class SearchService:
         return payload
 
     # ---------- 周榜 ----------
-    def weekly(self, limit=20, page=1):
+    def weekly(self, limit=20, page=1, lang=""):
         """近 7 天新建的项目，按星标排序——真实新晋榜，不依赖本地历史快照。"""
         page = max(1, int(page or 1))
         since = (date.today() - timedelta(days=7)).isoformat()
-        key = f"weekly|{since}|{page}|{limit}"
+        key = f"weekly|{since}|{page}|{limit}|{i18n.normalize(lang)}"
         cached = self.store.get_query(key, max_age_hours=6)
         if cached:
             cached["cached"] = True
@@ -434,7 +558,7 @@ class SearchService:
                     "description": clean_text(it.get("description")),
                     "topics": it.get("topics") or [],
                     "created": it.get("created_at") or "",
-                    "brief": self._cached_brief(it.get("full_name")),
+                    "brief": self._cached_brief(it.get("full_name"), lang),
                 }
             )
         payload = {
@@ -448,13 +572,15 @@ class SearchService:
         return payload
 
     # ---------- 速览译文（列表用，批量一次调用） ----------
-    def briefs(self, items):
+    def briefs(self, items, lang=""):
+        """列表卡片那两句介绍。中文直接让模型写；外语先取中文底稿，再整批译过去。"""
+        code = i18n.normalize(lang)
         items = [m for m in (items or []) if m.get("full_name")][:14]
         if not items:
             return {"briefs": {}}
         done, todo = {}, []
         for m in items:
-            cached = self._cached_brief(m["full_name"])
+            cached = self._cached_brief(m["full_name"], code)
             if cached:
                 done[m["full_name"]] = cached
             else:
@@ -463,7 +589,32 @@ class SearchService:
             return {"briefs": done, "cached": True}
         if not self.localizer.available():
             return {"briefs": done, "error": "本地模型不可用"}
+        try:
+            if code == i18n.DEFAULT:
+                for name, brief in self._gen_briefs(todo).items():
+                    done[name] = brief
+                    self._save_brief(name, brief, code)
+            else:
+                zh_source, need_zh = {}, []
+                for m in todo:
+                    zh = self._cached_brief(m["full_name"], i18n.DEFAULT)
+                    if zh:
+                        zh_source[m["full_name"]] = zh
+                    else:
+                        need_zh.append(m)
+                if need_zh:
+                    for name, brief in self._gen_briefs(need_zh).items():
+                        zh_source[name] = brief
+                        self._save_brief(name, brief, i18n.DEFAULT)
+                for name, brief in self._translate_briefs(zh_source, code).items():
+                    done[name] = brief
+                    self._save_brief(name, brief, code)
+        except Exception as e:
+            self.log(f"[速览翻译失败] {e}")
+            return {"briefs": done, "error": str(e)}
+        return {"briefs": done}
 
+    def _gen_briefs(self, todo):
         lines = "\n".join(
             "- {}｜{}｜{}".format(
                 m["full_name"], m.get("language") or "未标注", (m.get("description") or "")[:220]
@@ -501,25 +652,74 @@ class SearchService:
             "options": {"temperature": 0.25, "num_ctx": 4096, "num_predict": 1200},
             "keep_alive": "10m",
         }
-        try:
-            with self.model_lock:
-                data = self._post_chat(body)
+        with self.model_lock:
+            data = self._post_chat(body)
+        out = {}
+        for row in data.get("briefs", []):
+            name, brief = row.get("full_name"), (row.get("brief") or "").strip()
+            if name and brief:
+                out[name] = brief
+        return out
+
+    def _translate_briefs(self, zh_source, code):
+        """整批翻译中文介绍：翻译比"直接写外语"稳得多，也省一次生成。
+
+        一批最多 6 条：条数一多，小模型会把 JSON 写坏或写到一半被截断。
+        """
+        out = {}
+        names = list(zh_source.keys())
+        for start in range(0, len(names), 6):
+            chunk = names[start : start + 6]
+            lines = "\n".join(f"{i}. {zh_source[n]}" for i, n in enumerate(chunk, 1))
+            prompt = (
+                f"把下面每一条中文介绍翻译成{i18n.lang_name(code)}，意思不要改、不要加内容、不要解释。\n"
+                '只输出 JSON：{"briefs": [{"i": 1, "brief": "..."}]}，序号与原文一致。\n\n' + lines
+            )
+            body = {
+                "model": self.localizer.model,
+                "messages": [
+                    {"role": "system", "content": translate_system(code)},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "format": {
+                    "type": "object",
+                    "properties": {
+                        "briefs": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {"i": {"type": "integer"}, "brief": {"type": "string"}},
+                                "required": ["i", "brief"],
+                            },
+                        }
+                    },
+                    "required": ["briefs"],
+                },
+                "think": False,
+                "options": {"temperature": 0.2, "num_ctx": 4096, "num_predict": 1600},
+                "keep_alive": "10m",
+            }
+            try:
+                with self.model_lock:
+                    data = self._post_chat(body)
+            except Exception as e:
+                self.log(f"[速览翻译失败] 一批 {len(chunk)} 条：{e}")
+                continue
             for row in data.get("briefs", []):
-                name, brief = row.get("full_name"), (row.get("brief") or "").strip()
-                if name and brief:
-                    done[name] = brief
-                    self._save_brief(name, brief)
-        except Exception as e:
-            self.log(f"[速览翻译失败] {e}")
-            return {"briefs": done, "error": str(e)}
-        return {"briefs": done}
+                idx, brief = row.get("i"), (row.get("brief") or "").strip()
+                if isinstance(idx, int) and 1 <= idx <= len(chunk) and brief:
+                    out[chunk[idx - 1]] = brief
+        return out
 
-    def _brief_path(self, name):
+    def _brief_path(self, name, lang=""):
         safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", name)
-        return os.path.join(self.cache_dir, safe + ".brief")
+        code = i18n.normalize(lang)
+        suffix = "" if code == i18n.DEFAULT else "." + code
+        return os.path.join(self.cache_dir, safe + suffix + ".brief")
 
-    def _cached_brief(self, name):
-        p = self._brief_path(name)
+    def _cached_brief(self, name, lang=""):
+        p = self._brief_path(name, lang)
         if os.path.exists(p):
             try:
                 with open(p, encoding="utf-8") as f:
@@ -528,9 +728,9 @@ class SearchService:
                 return None
         return None
 
-    def _save_brief(self, name, brief):
+    def _save_brief(self, name, brief, lang=""):
         try:
-            with open(self._brief_path(name), "w", encoding="utf-8") as f:
+            with open(self._brief_path(name, lang), "w", encoding="utf-8") as f:
                 f.write(brief)
         except Exception:
             pass
@@ -558,6 +758,95 @@ class SearchService:
             readme = self.client.readme_text(name) or ""
         return readme, factsmod.split_readme_sections(readme, lang=i18n.normalize(lang))
 
+    # ---------- 流式调用（带语言闸门） ----------
+    def _stream_ollama(self, system, prompt, state, num_predict=1600, lang="zh-Hans"):
+        """流式调 Ollama，把碎片逐个 yield 出来。
+
+        state 由调用方持有：`text` 攒全文、`stats` 记 tokens/tps、`wrong` 标语言不符。
+        非中文时先把开头约 320 字压在缓冲区里，确认语言对了才往外吐——
+        判错就一个字都不发，调用方可以换更硬的话术重试，不会出现"先出中文再改口"。
+        """
+        body = {
+            "model": self.localizer.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "stream": True,
+            "think": False,
+            "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": num_predict},
+            "keep_alive": "10m",
+        }
+        req = urllib.request.Request(
+            self.localizer.base_url + "/api/chat",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        code = i18n.normalize(lang)
+        gate = 0 if code in ("zh-Hans", "zh-Hant") else 320
+        buf, n, started = [], 0, None
+        try:
+            with self.model_lock:
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    for line in resp:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line.decode("utf-8"))
+                        except Exception:
+                            continue
+                        piece = (chunk.get("message") or {}).get("content") or ""
+                        if piece:
+                            now = time.time()
+                            if started is None:
+                                started = now
+                            n += 1
+                            state["text"] += piece
+                            tps = None
+                            if n > 1 and started:
+                                span = max(now - started, 0.001)
+                                tps = round((n - 1) / span, 1)
+                            state["stats"]["tokens"] = n
+                            state["stats"]["tps"] = tps
+                            item = {"text": piece, "n": n, "tps": tps}
+                            if gate and not state["opened"]:
+                                buf.append(item)
+                                if len(state["text"]) >= gate:
+                                    if wrong_language(state["text"], code):
+                                        state["wrong"] = True
+                                        self.log(f"[语言不符] 模型没用 {code} 作答，这次作废")
+                                        return
+                                    state["opened"] = True
+                                    for it in buf:
+                                        yield ("chunk", it)
+                                    buf = []
+                            else:
+                                yield ("chunk", item)
+                        if chunk.get("done"):
+                            ec, ed = chunk.get("eval_count"), chunk.get("eval_duration")
+                            if ec and ed:
+                                state["stats"]["tokens"] = ec
+                                state["stats"]["tps"] = round(ec / (ed / 1e9), 1)
+                            elif started:
+                                state["stats"]["tps"] = round(n / max(time.time() - started, 0.001), 1)
+                            break
+        except Exception as e:
+            self.log(f"[流式调用失败] {e}")
+            state["error"] = str(e)
+            yield ("error", {"error": f"翻译中断：{e}"})
+            return
+        # 流结束还没开闸（内容短）：补判一次再一次性吐出来
+        if gate and not state["opened"] and not state["wrong"] and not state.get("error"):
+            if wrong_language(state["text"], code):
+                state["wrong"] = True
+                self.log(f"[语言不符] 模型没用 {code} 作答，这次作废")
+                return
+            state["opened"] = True
+            for it in buf:
+                yield ("chunk", it)
+
     # ---------- README 逐节翻译 ----------
     def stream_readme_section(self, name, index, lang="zh-Hans"):
         if not name:
@@ -582,8 +871,8 @@ class SearchService:
         title = sec["title"]
         yield ("start", {"title": title, "chars": len(body), "index": index})
 
-        # 缓存命中直接发成品，切模型后会按新模型重译
-        cached = self._read_section_cache(name, index)
+        # 缓存命中直接发成品，切模型或换语言后会按新的重译
+        cached = self._read_section_cache(name, index, lang)
         if cached:
             yield ("done", {"text": cached, "source": "cache", "title": title, "index": index})
             return
@@ -591,75 +880,61 @@ class SearchService:
         if not self.localizer.ensure_model():
             yield ("error", {"error": "本地模型不可用，无法翻译"})
             return
-        prompt = (
-            f"仓库 {name} 的 README 小节标题：{title}\n\n"
-            f"原文如下：\n---\n{body[:3000]}\n---\n\n"
-            "请译成中文，保留原来的段落与列表结构；代码块、命令、链接地址、库名一律原样保留；"
-            "不要加自己的评论，不要压缩内容。"
-        )
-        payload = {
-            "model": self.localizer.model,
-            "messages": [
-                {"role": "system", "content": "你是技术文档译者。把英文 README 译成通顺的中文，保留 markdown 结构与代码块原样。"},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": True,
-            "think": False,
-            "options": {"temperature": 0.2, "num_ctx": 8192, "num_predict": 1200},
-            "keep_alive": "10m",
-        }
-        req = urllib.request.Request(
-            self.localizer.base_url + "/api/chat",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        parts = []
-        stats = {"tokens": 0, "tps": None}
-        started = None
-        try:
-            with self.model_lock:
-                with urllib.request.urlopen(req, timeout=300) as resp:
-                    for line in resp:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line.decode("utf-8"))
-                        except Exception:
-                            continue
-                        piece = (chunk.get("message") or {}).get("content") or ""
-                        if piece:
-                            if started is None:
-                                started = time.time()
-                            parts.append(piece)
-                            span = max(time.time() - started, 0.001)
-                            tps = round(len(parts) / span, 1)
-                            stats["tokens"] = len(parts)
-                            stats["tps"] = tps
-                            yield ("chunk", {"text": piece, "tps": tps})
-                        if chunk.get("done"):
-                            ec, ed = chunk.get("eval_count"), chunk.get("eval_duration")
-                            if ec and ed:
-                                stats["tokens"] = ec
-                                stats["tps"] = round(ec / (ed / 1e9), 1)
-                            break
-        except Exception as e:
-            self.log(f"[README 小节翻译失败] {e}")
-            yield ("error", {"error": f"翻译中断：{e}"})
+        langname = i18n.lang_name(lang)
+        if i18n.normalize(lang) == "zh-Hans":
+            prompt = (
+                f"仓库 {name} 的 README 小节标题：{title}\n\n"
+                f"原文如下：\n---\n{body[:3000]}\n---\n\n"
+                "请译成中文，保留原来的段落与列表结构；代码块、命令、链接地址、库名一律原样保留；"
+                "不要加自己的评论，不要压缩内容。"
+            )
+            system = "你是技术文档译者。把英文 README 译成通顺的中文，保留 markdown 结构与代码块原样。"
+        else:
+            prompt = (
+                f"仓库 {name} 的 README 小节标题：{title}\n\n"
+                f"原文如下：\n---\n{body[:3000]}\n---\n\n"
+                f"请译成{langname}，保留原来的段落与列表结构；代码块、命令、链接地址、库名一律原样保留；"
+                "不要加自己的评论，不要压缩内容；除代码与专有名词外不要输出中文。"
+            )
+            system = (
+                f"你是技术文档译者。把英文 README 小节译成{langname}，保留 markdown 结构与代码块原样，"
+                "只输出译文本身。"
+            )
+        # 非中文时模型可能照旧写中文：先压着不发；判错就把中文译文当原文，改成"翻译"再跑一遍
+        text, stats = "", {"tokens": 0, "tps": None}
+        for attempt in range(2):
+            state = {"text": "", "stats": {"tokens": 0, "tps": None}, "wrong": False, "opened": False}
+            for ev, data in self._stream_ollama(system, prompt, state, num_predict=1200, lang=lang):
+                if ev == "error":
+                    yield (ev, data)
+                    return
+                yield (ev, data)
+            if state.get("error"):
+                return
+            if not state["wrong"]:
+                text, stats = state["text"], state["stats"]
+                break
+            if attempt == 0:
+                self.log("[语言不符] 这一节改用翻译模式重跑一次")
+                system = translate_system(lang)
+                prompt = translate_hint(state["text"], lang)
+        if not text:
+            yield ("error", {"error": "模型没能用目标语言输出，换个模型试试"})
             return
-        text = "".join(parts).strip()
+        text = text.strip()
         if text:
-            self._write_section_cache(name, index, text)
+            self._write_section_cache(name, index, text, lang)
         yield ("done", {"text": text, "source": "model", "title": title, "index": index, **stats})
 
-    def _section_cache_path(self, name, index):
+    def _section_cache_path(self, name, index, lang="zh-Hans"):
+        """缓存文件名带语言：同一节的法语译文不会被日语译文覆盖。"""
         tag = re.sub(r"[^A-Za-z0-9_.\-]", "_", self.localizer.model)
         safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", name)
-        return os.path.join(self.readme_cache, f"{safe}__{tag}__s{index}.md")
+        code = re.sub(r"[^A-Za-z0-9_\-]", "_", i18n.normalize(lang))
+        return os.path.join(self.readme_cache, f"{safe}__{tag}__{code}__s{index}.md")
 
-    def _read_section_cache(self, name, index):
-        p = self._section_cache_path(name, index)
+    def _read_section_cache(self, name, index, lang="zh-Hans"):
+        p = self._section_cache_path(name, index, lang)
         if os.path.isfile(p):
             try:
                 with open(p, encoding="utf-8") as f:
@@ -668,9 +943,9 @@ class SearchService:
                 return None
         return None
 
-    def _write_section_cache(self, name, index, text):
+    def _write_section_cache(self, name, index, text, lang="zh-Hans"):
         try:
-            with open(self._section_cache_path(name, index), "w", encoding="utf-8") as f:
+            with open(self._section_cache_path(name, index, lang), "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception:
             pass
@@ -818,7 +1093,7 @@ class SearchService:
         facts_data = self._facts_for(name, repo, tree, readme, lang)
         yield ("facts", {"facts": facts_data})
 
-        sig = signature(meta, readme, self.localizer.model)
+        sig = signature(meta, readme, self.localizer.model, lang)
 
         # 配图后台下载，不阻塞正文
         img_result = {"images": []}
@@ -852,7 +1127,7 @@ class SearchService:
 
         # 命中缓存 -> 直接把成品发过去，不用等模型
         cached = self.store.get_localization(name, sig)
-        if cached and validate(cached) is None:
+        if cached and validate(cached, lang) is None:
             img_thread.join(timeout=8)
             ev = _maybe_images()
             if ev:
@@ -866,7 +1141,7 @@ class SearchService:
             return
 
         tree_summary = summarize_tree(tree)
-        prompt = STREAM_PROMPT.format(
+        prompt = stream_prompt(lang).format(
             full_name=meta["full_name"],
             description=meta["description"] or "无",
             language=meta["language"] or "未标注",
@@ -878,119 +1153,110 @@ class SearchService:
             ),
             readme=readme[: self.cfg["readme_chars"]],
         )
-        body = {
-            "model": self.localizer.model,
-            "messages": [
-                {"role": "system", "content": STREAM_SYSTEM},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": True,
-            "think": False,
-            "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": 1600},
-            "keep_alive": "10m",
-        }
-        req = urllib.request.Request(
-            self.localizer.base_url + "/api/chat",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        full_text = []
-        started_at = None
-        stats = {"tokens": 0, "tps": None}
-        try:
-            with self.model_lock:
-                with urllib.request.urlopen(req, timeout=300) as resp:
-                    for line in resp:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            chunk = json.loads(line.decode("utf-8"))
-                        except Exception:
-                            continue
-                        piece = (chunk.get("message") or {}).get("content") or ""
-                        if piece:
-                            now = time.time()
-                            if started_at is None:
-                                started_at = now
-                            full_text.append(piece)
-                            n = len(full_text)
-                            tps = None
-                            if n > 1 and started_at:
-                                span = max(now - started_at, 0.001)
-                                tps = round((n - 1) / span, 1)
-                            stats["tokens"] = n
-                            stats["tps"] = tps
-                            yield ("chunk", {"text": piece, "n": n, "tps": tps})
-                            ev = _maybe_images()
-                            if ev:
-                                yield ev
-                        if chunk.get("done"):
-                            # Ollama 在最后一帧给出精确的 eval_count / eval_duration（纳秒）
-                            ec, ed = chunk.get("eval_count"), chunk.get("eval_duration")
-                            if ec and ed:
-                                stats["tokens"] = ec
-                                stats["tps"] = round(ec / (ed / 1e9), 1)
-                            elif started_at:
-                                stats["tps"] = round(len(full_text) / max(time.time() - started_at, 0.001), 1)
-                            break
-        except Exception as e:
-            self.log(f"[流式汉化失败] {e}")
-            yield ("error", {"error": f"翻译中断：{e}"})
+        # 非中文时模型可能照旧写中文：先压着不发；判错就把这段中文当原文，改成"翻译"再跑一遍
+        system = stream_system(lang)
+        text, stats = "", {"tokens": 0, "tps": None}
+        for attempt in range(2):
+            state = {"text": "", "stats": {"tokens": 0, "tps": None}, "wrong": False, "opened": False}
+            for ev, data in self._stream_ollama(system, prompt, state, num_predict=2400, lang=lang):
+                yield (ev, data)
+                if ev == "chunk":
+                    extra = _maybe_images()
+                    if extra:
+                        yield extra
+            if state.get("error"):
+                return
+            if not state["wrong"]:
+                text, stats = state["text"], state["stats"]
+                break
+            if attempt == 0:
+                # 4B 级模型常常无视"用日语写"，但"把这段中文译成日语"它能做
+                self.log("[语言不符] 改用翻译模式重跑一次")
+                system = translate_system(lang)
+                prompt = translate_hint(state["text"], lang)
+        if not text:
+            yield ("error", {"error": "模型没能用目标语言输出，换个模型试试"})
             return
 
-        text = "".join(full_text)
-        ev = _maybe_images()
-        if ev:
-            yield ev
+        extra = _maybe_images()
+        if extra:
+            yield extra
         parsed = parse_sections(text)
         if parsed:
-            if validate(parsed) is None:
+            problem = validate(parsed, lang)
+            if problem is None and not state.get("wrong"):
                 self.store.put_localization(name, sig, parsed, today_str())
+            elif problem:
+                self.log(f"[未落库] {problem}")
             yield ("done", {"source": "model", "parsed": parsed, **stats})
         else:
             yield ("done", {"source": "model-raw", "raw": text, **stats})
 
 
+KNOWN_KEYS = ["速览", "它是什么", "解决什么问题", "核心机制", "主要功能", "项目结构", "快速上手", "值得学的点", "适合谁", "术语表"]
+LIST_KEYS = ("主要功能", "值得学的点", "项目结构", "术语表")
+
+
+def _split_items(val):
+    """列表字段拆项：模型有时把 "- a - b - c" 挤在一行，也照拆。"""
+    lines = [ln.strip() for ln in (val or "").splitlines() if ln.strip()]
+    items = []
+    for ln in lines:
+        ln = re.sub(r"^[-•*]\s*", "", ln)
+        if " - " in ln and len(lines) <= 2:
+            items.extend([p.strip(" -•*") for p in ln.split(" - ") if p.strip(" -•*")])
+        else:
+            items.append(re.sub(r"^[（(]\d+[)）]\s*", "", ln))
+    return [x for x in items if x]
+
+
 def parse_sections(text):
-    """把【字段】分段文本解析成结构化字典。"""
-    found = re.split(r"【([^】]{1,8})】", text or "")
-    data = {}
+    """把【字段】分段文本解析成结构化字典。
+
+    小语种模型常把【它是什么】连标记一起翻掉，所以键认不出来时按顺序回落到 10 个标准字段。
+    """
+    found = re.split(r"【([^】]{1,20})】", text or "")
+    pairs = []
     for i in range(1, len(found) - 1, 2):
-        key = found[i].strip()
-        val = found[i + 1].strip()
-        if not val:
+        key, val = found[i].strip(), found[i + 1].strip()
+        if val:
+            pairs.append((key, val))
+    if not pairs:
+        return None
+
+    data = {}
+    order_used = False
+    for idx, (key, val) in enumerate(pairs):
+        canonical = key if key in KNOWN_KEYS else None
+        if canonical is None and idx < len(KNOWN_KEYS):
+            canonical = KNOWN_KEYS[idx]
+            order_used = True
+        if canonical is None or canonical in data:
             continue
-        if key in ("主要功能", "值得学的点", "项目结构", "术语表"):
-            items = []
-            for ln in val.splitlines():
-                ln = ln.strip()
-                if not ln:
-                    continue
-                ln = re.sub(r"^[-•*]\s*", "", ln)
-                items.append(ln)
-            if key == "术语表":
+        if canonical in LIST_KEYS:
+            items = _split_items(val)
+            if canonical == "术语表":
                 rows = []
                 for ln in items:
                     parts = [p.strip() for p in ln.split("|")]
                     if len(parts) >= 2:
-                        rows.append(
-                            {"英文": parts[0], "中文": parts[1], "解释": parts[2] if len(parts) > 2 else ""}
-                        )
-                data[key] = rows
-            elif key == "项目结构":
+                        rows.append({"英文": parts[0], "中文": parts[1], "解释": parts[2] if len(parts) > 2 else ""})
+                data[canonical] = rows
+            elif canonical == "项目结构":
                 rows = []
                 for ln in items:
                     m = re.match(r"([^：:]+)[：:]\s*(.*)", ln)
                     if m:
                         rows.append({"路径": m.group(1).strip(), "作用": m.group(2).strip()})
-                data[key] = rows
+                data[canonical] = rows
             else:
-                data[key] = [re.sub(r"^[（(]\d+[)）]\s*", "", x) for x in items if x]
+                data[canonical] = items
         else:
-            data[key] = re.sub(r"\s*\n\s*", " ", val).strip()
+            data[canonical] = re.sub(r"\s*\n\s*", " ", re.sub(r"^[-•*]\s*", "", val)).strip()
+
+    if order_used:
+        # 标记被翻译了：按字段顺序补齐，别让后面的字段整体错位
+        pass
     if len(data) < 4:
         return None
     return data

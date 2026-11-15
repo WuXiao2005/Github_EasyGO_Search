@@ -113,6 +113,22 @@ def label(lang):
     return dict(LANGS).get(code, code)
 
 
+# 给模型看的语言名（prompt 里用，比 UI 标签更明确）
+MODEL_LANG = {
+    "zh-Hans": "简体中文",
+    "zh-Hant": "繁體中文（台灣／香港用語，不要寫成簡體）",
+    "ja": "日本語",
+    "fr": "français（法语）",
+    "ru": "русский（俄语）",
+    "ko": "한국어（韩语）",
+}
+
+
+def lang_name(lang):
+    """语言码 → 写进 prompt 的语言名。"""
+    return MODEL_LANG.get(normalize(lang), MODEL_LANG[DEFAULT])
+
+
 def keys(lang="zh-Hant"):
     """调试/自检用：某个语言已收录多少条。"""
     return len([k for k in table(lang) if not k.startswith("__")])

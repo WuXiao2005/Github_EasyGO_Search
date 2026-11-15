@@ -93,15 +93,15 @@ def make_handler(app):
                     q = (qs.get("q") or [""])[0]
                     page = (qs.get("page") or ["1"])[0]
                     force = (qs.get("force") or ["0"])[0] == "1"
-                    self._json(app.svc.search(q, page=page, force=force))
+                    self._json(app.svc.search(q, page=page, force=force, lang=(qs.get("lang") or [""])[0]))
                     return
                 if path == "/api/hot":
                     page = (qs.get("page") or ["1"])[0]
-                    self._json(app.svc.hot(page=page))
+                    self._json(app.svc.hot(page=page, lang=(qs.get("lang") or [""])[0]))
                     return
                 if path == "/api/weekly":
                     page = (qs.get("page") or ["1"])[0]
-                    self._json(app.svc.weekly(page=page))
+                    self._json(app.svc.weekly(page=page, lang=(qs.get("lang") or [""])[0]))
                     return
                 if path == "/api/repo_stream":
                     name = (qs.get("name") or [""])[0]
@@ -172,7 +172,7 @@ def make_handler(app):
                 raw = self.rfile.read(length) if length else b"{}"
                 payload = json.loads(raw.decode("utf-8") or "{}")
                 if parsed.path == "/api/briefs":
-                    self._json(app.svc.briefs(payload.get("items") or []))
+                    self._json(app.svc.briefs(payload.get("items") or [], payload.get("lang") or ""))
                     return
                 if parsed.path == "/api/model":
                     self._json(app.svc.set_model(payload.get("model") or ""))

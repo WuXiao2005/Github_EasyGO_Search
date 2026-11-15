@@ -184,10 +184,22 @@ class Localizer:
         return parse_json_loose(content)
 
 
-def validate(data):
-    """小模型容易只写半句话，这里做最低限度把关。返回问题描述或 None。"""
+def validate(data, lang="zh-Hans"):
+    """小模型容易只写半句话，这里做最低限度把关。返回问题描述或 None。
+
+    非中文时不套用中文字数阈值（法语/俄语同样意思要长得多，日语又更短），
+    只守「它是什么」「核心机制」两个核心字段，避免整份译文被拦在缓存外面。
+    """
     if not isinstance(data, dict):
         return "不是 JSON 对象"
+    if lang != "zh-Hans":
+        # 外语没有中文那套字数直觉，只守三条核心字段，别把整份译文拦在缓存外面
+        for key in ("它是什么", "核心机制"):
+            if not str(data.get(key) or "").strip():
+                return f"缺少字段「{key}」"
+            if len(str(data.get(key))) < 12:
+                return f"「{key}」过短"
+        return None
     required = ["速览", "它是什么", "核心机制", "适合谁"]
     for key in required:
         if not str(data.get(key) or "").strip():
