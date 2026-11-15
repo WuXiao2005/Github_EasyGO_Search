@@ -269,7 +269,7 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
     <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0f6f63"/><path d="M8 20l4-8 4 6 4-10 4 12" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
     <span class="brand">中文搜 GitHub</span>
     <button class="tag modelbtn" id="modelBtn" type="button" title="点击切换本地模型">
-      本地实时汉化 · <b id="modelLabel">%%MODEL%%</b>
+      本地实时翻译 · <b id="modelLabel">%%MODEL%%</b>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
     </button>
   </div>
@@ -315,7 +315,7 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
   </div></div>
   <div class="dhead" id="dhead"></div>
   <div class="dbody" id="dbody"></div>
-  <div class="foot">中文内容由本地模型实时生成，仅作导读，实际内容以原仓库为准。</div>
+  <div class="foot">翻译内容由本地模型实时生成，仅作导读，实际内容以原仓库为准。</div>
 </section>
 
 <div class="mmask" id="mmask">
@@ -323,12 +323,12 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
     <div class="mhead">
       <div>
         <div class="mtitle" id="mtitle">选择本地模型</div>
-        <div class="msub">每次打开都会执行一次 <code>ollama list</code>，新下载的模型会立刻出现</div>
+        <div class="msub">每次打开默认执行 <code>ollama list</code>，模型列表会在执行后出现</div>
       </div>
       <button class="mrefresh" id="mrefresh" type="button">刷新</button>
     </div>
     <div class="mlist" id="mlist"></div>
-    <div class="mfoot">选中即切换，同时写回 config.json，重启后仍是这个模型。本机 6GB 显存，标“可能吃力”的能跑但会明显变慢。</div>
+    <div class="mfoot">选中即切换。标黄的模型为超过8B的模型，翻译的最终速度由机器性能决定。</div>
   </div>
 </div>
 <div class="toast" id="toast"></div>

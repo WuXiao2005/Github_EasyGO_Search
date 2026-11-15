@@ -152,7 +152,7 @@ class GitHubClient:
 
 
 def is_image_bytes(data):
-    """不是真图片就别写盘，否则页面会裂图。"""
+    """不是真图片就别写盘。"""
     if data[:4] == b"\x89PNG":
         return True
     if data[:2] == b"\xff\xd8":
