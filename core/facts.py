@@ -2,9 +2,14 @@
 
 详情页最上面的几块（这是什么 / 值不值得看 / 我能不能跑 / 代码地图 / 按钮导读）
 以及 README 目录，都在这里生成，所以点开仓库 1 秒内就能出内容。
+
+文案全部走 `i18n.tr(lang, "中文原文")`：中文原文本身就是字典的键，
+`locales/facts/<lang>.json` 里放译文，没配到就原样返回中文。
 """
 import re
 from datetime import datetime, timezone
+
+from . import i18n
 
 # 根目录常见大文件/配置，绝大多数情况不用读
 HARD_SKIP = {
@@ -108,6 +113,26 @@ CMD_PAT = re.compile(
 FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
 HEADING = re.compile(r"^(#{1,2})\s+(.+?)\s*$", re.M)
 
+BUTTONS = [
+    {"name": "Code（绿色按钮）", "zh": "拿代码走人", "act": "唯一必点：复制 clone 地址或下 zip"},
+    {"name": "Releases", "zh": "发过的成品版本", "act": "想直接用、不想编译就来这"},
+    {"name": "Issues", "zh": "别人遇到过的坑", "act": "装不上、报错先在这搜"},
+    {"name": "Pull requests", "zh": "别人正在改的东西", "act": "普通使用者可以忽略"},
+    {"name": "Actions", "zh": "自动构建流水线", "act": "维护者看的，可忽略"},
+    {"name": "Projects", "zh": "开发计划看板", "act": "可忽略"},
+    {"name": "Security", "zh": "漏洞通告入口", "act": "关心安全时才点"},
+    {"name": "Insights", "zh": "提交活跃度统计", "act": "想判断项目死活时可以点"},
+    {"name": "Star", "zh": "收藏+点赞", "act": "给作者鼓励，不影响你能不能跑"},
+    {"name": "Fork", "zh": "复制一份到你自己的账号", "act": "想改代码才需要，使用者不必点"},
+    {"name": "main / Branches", "zh": "最新代码 / 历史分支", "act": "默认保持 main 就行"},
+    {"name": "Tags", "zh": "打过版本号的提交", "act": "下载请走 Releases，别在这找"},
+    {"name": "About 右侧的 Topics", "zh": "项目自己贴的标签", "act": "只能当关键词看，不代表质量"},
+]
+
+
+def _t(lang, text):
+    return i18n.tr(lang, text)
+
 
 def _days_since(iso_str):
     if not iso_str:
@@ -121,34 +146,34 @@ def _days_since(iso_str):
     return (datetime.now(timezone.utc) - dt).days
 
 
-def _freshness(pushed_at):
+def _freshness(pushed_at, lang="zh-Hans"):
     days = _days_since(pushed_at)
     if days is None:
-        return {"level": "unknown", "text": "提交时间未知", "days": None}
+        return {"level": "unknown", "text": _t(lang, "提交时间未知"), "days": None}
     if days <= 0:
-        return {"level": "active", "text": "今天还有提交", "days": 0}
+        return {"level": "active", "text": _t(lang, "今天还有提交"), "days": 0}
     if days <= 30:
-        return {"level": "active", "text": f"最近 {max(days, 0)} 天内还在提交", "days": days}
+        return {"level": "active", "text": _t(lang, "最近 {} 天内还在提交").format(max(days, 0)), "days": days}
     if days <= 180:
-        return {"level": "half", "text": f"最近 {days} 天内有提交", "days": days}
+        return {"level": "half", "text": _t(lang, "最近 {} 天内有提交").format(days), "days": days}
     if days <= 730:
-        return {"level": "slow", "text": f"约 {days // 30} 个月前有提交，更新变慢", "days": days}
-    return {"level": "gone", "text": f"已经 {days // 365} 年没动静，基本停更", "days": days}
+        return {"level": "slow", "text": _t(lang, "约 {} 个月前有提交，更新变慢").format(days // 30), "days": days}
+    return {"level": "gone", "text": _t(lang, "已经 {} 年没动静，基本停更").format(days // 365), "days": days}
 
 
-def _license_info(spdx):
+def _license_info(spdx, lang="zh-Hans"):
     spdx = (spdx or "").strip()
     if not spdx or spdx.upper() == "NOASSERTION":
-        return {"spdx": spdx or "未声明", "vibe": "没有明确协议，商用前要自己确认"}
+        return {"spdx": _t(lang, "未声明"), "vibe": _t(lang, "没有明确协议，商用前要自己确认")}
     if spdx in ("MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0"):
-        return {"spdx": spdx, "vibe": "宽松协议，可以商用、可以改，保留版权声明即可"}
+        return {"spdx": spdx, "vibe": _t(lang, "宽松协议，可以商用、可以改，保留版权声明即可")}
     if spdx in ("GPL-2.0", "GPL-3.0", "AGPL-3.0"):
-        return {"spdx": spdx, "vibe": "传染性协议，自己用没问题，分发要开源"}
+        return {"spdx": spdx, "vibe": _t(lang, "传染性协议，自己用没问题，分发要开源")}
     if spdx in ("MPL-2.0", "EPL-2.0"):
-        return {"spdx": spdx, "vibe": "弱传染，改了它的文件需要开源那部分"}
+        return {"spdx": spdx, "vibe": _t(lang, "弱传染，改了它的文件需要开源那部分")}
     if spdx in ("Unlicense", "CC0-1.0"):
-        return {"spdx": spdx, "vibe": "等同于放弃版权，随便用"}
-    return {"spdx": spdx, "vibe": "小众协议，用之前看一眼条款"}
+        return {"spdx": spdx, "vibe": _t(lang, "等同于放弃版权，随便用")}
+    return {"spdx": spdx, "vibe": _t(lang, "小众协议，用之前看一眼条款")}
 
 
 def _install_cmds(readme):
@@ -170,48 +195,52 @@ def _install_cmds(readme):
     return lines
 
 
-def _stack(root_files_lower):
+def _stack(root_files_lower, lang="zh-Hans"):
     out = []
     for fname, rt in RUNTIMES:
         if fname in root_files_lower:
-            out.append(rt)
+            out.append({"name": rt["name"], "why": _t(lang, rt["why"])})
     if "dockerfile" in root_files_lower or "docker-compose.yml" in root_files_lower:
-        out.append({"name": "Docker（可选）", "why": "带 Dockerfile，不想配环境可以直接容器跑"})
+        out.append({"name": _t(lang, "Docker（可选）"), "why": _t(lang, "带 Dockerfile，不想配环境可以直接容器跑")})
     return out
 
 
-def _kind(tree_sum, root_lower, readme):
+def _kind(tree_sum, root_lower, readme, lang="zh-Hans"):
     dirs = {d["path"] for d in tree_sum.get("top_dirs", [])}
     has_src = bool(dirs & {"src", "lib", "app", "apps", "packages", "core", "crates"})
     has_docs = bool(dirs & {"docs", "doc", "examples", "example"})
     readme_low = (readme or "")[:4000].lower()
     if "awesome" in readme_low and not has_src:
-        return {"label": "清单/索引类", "why": "它本身不是程序，是一份整理好的资源清单一类，价值在于目录而不是代码"}
+        return {"label": _t(lang, "清单/索引类"),
+                "why": _t(lang, "它本身不是程序，是一份整理好的资源清单一类，价值在于目录而不是代码")}
     if len(re.findall(r"\[[^\]]+\]\(http", readme or "")) > 40 and not has_src:
-        return {"label": "资源清单", "why": "README 里基本都是外链，直接读 README 目录就够了"}
+        return {"label": _t(lang, "资源清单"), "why": _t(lang, "README 里基本都是外链，直接读 README 目录就够了")}
     if not has_src and not _stack(root_lower):
-        return {"label": "文档/资料仓库", "why": "看不到可运行的代码主体，多半是文档、教程或资料"}
+        return {"label": _t(lang, "文档/资料仓库"), "why": _t(lang, "看不到可运行的代码主体，多半是文档、教程或资料")}
     if "tutorial" in readme_low or "教程" in readme_low or "course" in readme_low:
-        return {"label": "教程/练手项目", "why": "定位是带着你一步步做，按章节顺序读比直接跑更值"}
+        return {"label": _t(lang, "教程/练手项目"), "why": _t(lang, "定位是带着你一步步做，按章节顺序读比直接跑更值")}
     if has_docs and has_src:
-        return {"label": "拿来用的产品", "why": "有完整实现也有文档，正确的用法是装上跑起来，而不是从头读源码"}
+        return {"label": _t(lang, "拿来用的产品"), "why": _t(lang, "有完整实现也有文档，正确的用法是装上跑起来，而不是从头读源码")}
     if has_src:
-        return {"label": "代码库", "why": "以代码为主，先看 examples/docs 再决定要不要深入"}
-    return {"label": "尚不确定", "why": "结构信息不足，建议直接看 README 开头"}
+        return {"label": _t(lang, "代码库"), "why": _t(lang, "以代码为主，先看 examples/docs 再决定要不要深入")}
+    return {"label": _t(lang, "尚不确定"), "why": _t(lang, "结构信息不足，建议直接看 README 开头")}
 
 
-def _code_map(tree_sum, root_files):
+def _code_map(tree_sum, root_files, lang="zh-Hans"):
     rows = []
     for d in tree_sum.get("top_dirs", []):
         name = d["path"]
         low = name.lower()
         files = d.get("files", 0)
         if low in HARD_SKIP:
-            rows.append({"path": name + "/", "files": files, "note": "配置/工具目录，看项目时可以跳过", "read": False})
+            rows.append({"path": name + "/", "files": files,
+                         "note": _t(lang, "配置/工具目录，看项目时可以跳过"), "read": False})
             continue
         note, read = DIR_NOTES.get(low, ("", True))
         if not note:
-            note = "其他内容" if files > 20 else "少量文件"
+            note = _t(lang, "其他内容") if files > 20 else _t(lang, "少量文件")
+        else:
+            note = _t(lang, note)
         rows.append({"path": name + "/", "files": files, "note": note, "read": read})
     # 建议读的排前面，跳过的沉到后面；同类里文件多的靠前
     rows.sort(key=lambda r: (not r["read"], -r["files"]))
@@ -225,37 +254,22 @@ def _code_map(tree_sum, root_files):
         0 if ("入口" in e["why"]) else 1 if ("安装" not in e["why"] and "定义" not in e["why"]) else 2,
         e["path"],
     ))
+    entries = [{"path": e["path"], "why": _t(lang, e["why"])} for e in entries]
     return rows, entries
 
 
-def _verdict(kind, fresh, lic, noisy, stack):
+def _verdict(kind, fresh, lic, noisy, stack, lang="zh-Hans"):
     bits = [kind["label"]]
     if fresh["level"] in ("active", "half"):
-        bits.append("还在维护")
+        bits.append(_t(lang, "还在维护"))
     elif fresh["level"] in ("slow", "gone"):
-        bits.append("更新变慢甚至停更")
+        bits.append(_t(lang, "更新变慢甚至停更"))
     if noisy and noisy.get("level") == "loud":
-        bits.append("issue 很多，属于很热但也很吵的项目")
+        bits.append(_t(lang, "issue 很多，属于很热但也很吵的项目"))
     if stack:
-        bits.append("需要 " + " / ".join(s["name"].split("（")[0] for s in stack[:2]) + " 环境")
-    return "；".join(bits) + "。"
-
-
-BUTTONS = [
-    {"name": "Code（绿色按钮）", "zh": "拿代码走人", "act": "唯一必点：复制 clone 地址或下 zip"},
-    {"name": "Releases", "zh": "发过的成品版本", "act": "想直接用、不想编译就来这"},
-    {"name": "Issues", "zh": "别人遇到过的坑", "act": "装不上、报错先在这搜"},
-    {"name": "Pull requests", "zh": "别人正在改的东西", "act": "普通使用者可以忽略"},
-    {"name": "Actions", "zh": "自动构建流水线", "act": "维护者看的，可忽略"},
-    {"name": "Projects", "zh": "开发计划看板", "act": "可忽略"},
-    {"name": "Security", "zh": "漏洞通告入口", "act": "关心安全时才点"},
-    {"name": "Insights", "zh": "提交活跃度统计", "act": "想判断项目死活时可以点"},
-    {"name": "Star", "zh": "收藏+点赞", "act": "给作者鼓励，不影响你能不能跑"},
-    {"name": "Fork", "zh": "复制一份到你自己的账号", "act": "想改代码才需要，使用者不必点"},
-    {"name": "main / Branches", "zh": "最新代码 / 历史分支", "act": "默认保持 main 就行"},
-    {"name": "Tags", "zh": "打过版本号的提交", "act": "下载请走 Releases，别在这找"},
-    {"name": "About 右侧的 Topics", "zh": "项目自己贴的标签", "act": "只能当关键词看，不代表质量"},
-]
+        names = " / ".join(s["name"].split("（")[0].split(" (")[0] for s in stack[:2])
+        bits.append(_t(lang, "需要 {} 环境").format(names))
+    return _t(lang, "{}。").format(_t(lang, "；").join(bits))
 
 
 def _clean_title(s):
@@ -265,7 +279,7 @@ def _clean_title(s):
     return s
 
 
-def split_readme_sections(readme, min_chars=40, max_sections=24):
+def split_readme_sections(readme, min_chars=40, max_sections=24, lang="zh-Hans"):
     """按一级/二级标题切 README，忽略代码块里的 # 注释行，供前端逐节翻译。"""
     text = readme or ""
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
@@ -294,11 +308,11 @@ def split_readme_sections(readme, min_chars=40, max_sections=24):
     if not marks:
         body = text.strip()
         if body:
-            out.append({"i": 0, "title": "正文", "level": 1, "chars": len(body), "body": body})
+            out.append({"i": 0, "title": _t(lang, "正文"), "level": 1, "chars": len(body), "body": body})
         return out
     head = "\n".join(lines[: marks[0][0]]).strip()
     if len(head) >= min_chars:
-        out.append({"i": 0, "title": "开头", "level": 1, "chars": len(head), "body": head})
+        out.append({"i": 0, "title": _t(lang, "开头"), "level": 1, "chars": len(head), "body": head})
     for k, (idx, level, title) in enumerate(marks):
         end = marks[k + 1][0] if k + 1 < len(marks) else len(lines)
         body = "\n".join(lines[idx + 1: end]).strip()
@@ -311,7 +325,7 @@ def split_readme_sections(readme, min_chars=40, max_sections=24):
     return out
 
 
-def build(repo, tree, readme):
+def build(repo, tree, readme, lang="zh-Hans"):
     """把 GitHub 原始数据压成前端直接可渲染的事实字典。"""
     tree_sum = {
         "top_dirs": [],
@@ -336,30 +350,32 @@ def build(repo, tree, readme):
     root_lower = {f.lower() for f in root_files}
     stars = repo.get("stargazers_count", 0) or 0
     open_issues = repo.get("open_issues_count", 0) or 0
-    kind = _kind(tree_sum, root_lower, readme)
-    fresh = _freshness(repo.get("pushed_at"))
-    lic = _license_info((repo.get("license") or {}).get("spdx_id"))
-    stack = _stack(root_lower)
+    kind = _kind(tree_sum, root_lower, readme, lang)
+    fresh = _freshness(repo.get("pushed_at"), lang)
+    lic = _license_info((repo.get("license") or {}).get("spdx_id"), lang)
+    stack = _stack(root_lower, lang)
     size_mb = round((repo.get("size") or 0) / 1024.0, 1)
 
     noisy = None
     if stars >= 5000 and open_issues > 0:
         ratio = open_issues / max(stars, 1)
         if ratio > 0.008:
-            noisy = {"level": "loud", "text": f"{open_issues} 个未关 issue，讨论很热闹，翻起来容易被淹"}
+            noisy = {"level": "loud", "text": _t(lang, "{} 个未关 issue，讨论很热闹，翻起来容易被淹").format(open_issues)}
         else:
-            noisy = {"level": "calm", "text": f"{open_issues} 个未关 issue，相对克制"}
+            noisy = {"level": "calm", "text": _t(lang, "{} 个未关 issue，相对克制").format(open_issues)}
     elif open_issues:
-        noisy = {"level": "calm", "text": f"{open_issues} 个未关 issue"}
+        noisy = {"level": "calm", "text": _t(lang, "{} 个未关 issue").format(open_issues)}
 
     hardware = None
     if HW_STRONG.search(readme or ""):
-        hardware = "README 提到显卡/显存，本地跑大概率要 GPU"
+        hardware = _t(lang, "README 提到显卡/显存，本地跑大概率要 GPU")
     elif HW_PAT.search((readme or "")[:6000]):
-        hardware = "README 出现 GPU/CUDA 字样，可能支持加速（不一定要）"
+        hardware = _t(lang, "README 出现 GPU/CUDA 字样，可能支持加速（不一定要）")
 
-    rows, entries = _code_map(tree_sum, root_files)
-    sections = split_readme_sections(readme)
+    rows, entries = _code_map(tree_sum, root_files, lang)
+    sections = split_readme_sections(readme, lang=lang)
+
+    buttons = [{"name": _t(lang, b["name"]), "zh": _t(lang, b["zh"]), "act": _t(lang, b["act"])} for b in BUTTONS]
 
     return {
         "kind": kind,
@@ -373,8 +389,8 @@ def build(repo, tree, readme):
         "install_cmds": _install_cmds(readme),
         "entry": entries[:4],
         "map": rows[:12],
-        "buttons": BUTTONS,
-        "verdict": _verdict(kind, fresh, lic, noisy, stack),
+        "buttons": buttons,
+        "verdict": _verdict(kind, fresh, lic, noisy, stack, lang),
         "readme_toc": [{"i": s["i"], "title": s["title"], "chars": s["chars"]} for s in sections],
         "repo_url": repo.get("html_url") or "",
         "default_branch": repo.get("default_branch") or "main",

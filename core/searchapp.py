@@ -12,6 +12,7 @@ from datetime import date, timedelta
 
 from . import facts as factsmod
 from . import gitpull
+from . import i18n
 from .github import GitHubClient, clean_text, extract_images, summarize_tree
 from .localize import Localizer, validate, parse_json_loose
 from .pipeline import signature
@@ -535,28 +536,30 @@ class SearchService:
             pass
 
     # ---------- 规则层：判断卡 / 能不能跑 / 代码地图 / 按钮导读 ----------
-    def _facts_for(self, name, repo, tree, readme):
-        hit = self._facts_mem.get(name)
+    def _facts_for(self, name, repo, tree, readme, lang="zh-Hans"):
+        # 每个语言单独缓存一份：同一仓库切语言时不用重算
+        key = name + "#" + i18n.normalize(lang)
+        hit = self._facts_mem.get(key)
         if hit and time.time() - hit[0] < 1800:
             return hit[1]
-        data = factsmod.build(repo, tree, readme)
+        data = factsmod.build(repo, tree, readme, i18n.normalize(lang))
         # README 正文也顺手存一份，逐节翻译时不用再抓
         data["_readme"] = readme
-        self._facts_mem[name] = (time.time(), data)
-        if len(self._facts_mem) > 40:
+        self._facts_mem[key] = (time.time(), data)
+        if len(self._facts_mem) > 80:
             oldest = min(self._facts_mem, key=lambda k: self._facts_mem[k][0])
             self._facts_mem.pop(oldest, None)
         return data
 
-    def _readme_and_sections(self, name):
-        hit = self._facts_mem.get(name)
+    def _readme_and_sections(self, name, lang="zh-Hans"):
+        hit = self._facts_mem.get(name + "#" + i18n.normalize(lang))
         readme = hit[1].get("_readme") if hit else None
         if not readme:
             readme = self.client.readme_text(name) or ""
-        return readme, factsmod.split_readme_sections(readme)
+        return readme, factsmod.split_readme_sections(readme, lang=i18n.normalize(lang))
 
     # ---------- README 逐节翻译 ----------
-    def stream_readme_section(self, name, index):
+    def stream_readme_section(self, name, index, lang="zh-Hans"):
         if not name:
             yield ("error", {"error": "缺少仓库名"})
             return
@@ -564,7 +567,7 @@ class SearchService:
             index = int(index)
         except Exception:
             index = 0
-        readme, sections = self._readme_and_sections(name)
+        readme, sections = self._readme_and_sections(name, lang)
         if not sections:
             yield ("error", {"error": "这个仓库没有可切的 README 小节"})
             return
@@ -781,7 +784,7 @@ class SearchService:
             yield ev
 
     # ---------- 详情：流式汉化 ----------
-    def stream_detail(self, name):
+    def stream_detail(self, name, lang="zh-Hans"):
         """生成 SSE 事件：meta（立刻显示基本信息） -> chunk（边翻边出字） -> done。"""
         if not name:
             yield ("error", {"error": "缺少仓库名"})
@@ -812,7 +815,7 @@ class SearchService:
         tree = self.client.tree(name, meta["default_branch"]) or []
 
         # 规则层（判断卡 / 能不能跑 / 代码地图 / 按钮导读 / README 目录）：0 模型开销
-        facts_data = self._facts_for(name, repo, tree, readme)
+        facts_data = self._facts_for(name, repo, tree, readme, lang)
         yield ("facts", {"facts": facts_data})
 
         sig = signature(meta, readme, self.localizer.model)

@@ -10,6 +10,7 @@
 """
 import json
 import os
+import re
 import threading
 
 LANGS = (
@@ -48,16 +49,12 @@ def normalize(lang):
     return DEFAULT
 
 
-def table(lang):
-    """读某个语言的字典（毫秒级，进程内缓存）。"""
-    lang = normalize(lang)
-    if lang == DEFAULT:
-        return {}
+def _load(path):
+    """读一份字典（进程内缓存，按绝对路径做键）。"""
     with _lock:
-        if lang in _cache:
-            return _cache[lang]
+        if path in _cache:
+            return _cache[path]
     data = {}
-    path = os.path.join(_DIR, lang + ".json")
     if os.path.isfile(path):
         try:
             with open(path, encoding="utf-8") as f:
@@ -66,19 +63,46 @@ def table(lang):
             print(f"[i18n] 读取 {path} 失败: {e}")
             data = {}
     with _lock:
-        _cache[lang] = data
+        _cache[path] = data
     return data
 
 
+def table(lang):
+    """界面壳字典（locales/<lang>.json，以中文原文为键）。"""
+    lang = normalize(lang)
+    if lang == DEFAULT:
+        return {}
+    return _load(os.path.join(_DIR, lang + ".json"))
+
+
+def facts_table(lang):
+    """规则层字典（locales/facts/<lang>.json，facts.py 里 `i18n.tr()` 用）。"""
+    return _load(os.path.join(_DIR, "facts", normalize(lang) + ".json"))
+
+
+def tr(lang, text):
+    """规则层翻译：查不到就原样返回中文。"""
+    return facts_table(lang).get(text, text)
+
+
+def _n(s):
+    """跟前端 `i18nNorm` 一致：去掉所有空白再比对。
+
+    JS 侧是按"去空白后的文本"查表的，所以键也必须同口径入库，
+    否则 `README 里没找到…`、`共 {} 节。` 这类带空格的句子永远查不到。
+    """
+    return re.sub(r"\s+", "", s or "")
+
+
 def payload(lang):
-    """给前端的一次性注入包。"""
+    """给前端的一次性注入包（键统一去空白，和前端 `i18nNorm` 对齐）。"""
     raw = table(lang)
     return {
         "lang": normalize(lang),
         "default": DEFAULT,
-        "dict": {k: v for k, v in raw.items() if not k.startswith("__")},
-        "prefix": raw.get("__prefix__", {}),
-        "suffix": raw.get("__suffix__", {}),
+        "dict": {_n(k): v for k, v in raw.items() if not k.startswith("__")},
+        "prefix": {_n(k): v for k, v in (raw.get("__prefix__") or {}).items()},
+        "suffix": raw.get("__suffix__") or {},
         "labels": dict(LANGS),
     }
 

@@ -105,12 +105,14 @@ def make_handler(app):
                     return
                 if path == "/api/repo_stream":
                     name = (qs.get("name") or [""])[0]
-                    self._sse(app.svc.stream_detail(name))
+                    lang = (qs.get("lang") or [""])[0]
+                    self._sse(app.svc.stream_detail(name, lang))
                     return
                 if path == "/api/readme_sec":
                     name = (qs.get("name") or [""])[0]
                     idx = (qs.get("i") or ["0"])[0]
-                    self._sse(app.svc.stream_readme_section(name, idx))
+                    lang = (qs.get("lang") or [""])[0]
+                    self._sse(app.svc.stream_readme_section(name, idx, lang))
                     return
                 if path == "/api/clone_prep":
                     name = (qs.get("name") or [""])[0]

@@ -273,7 +273,7 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
 <div class="hero">
   <div class="brandrow">
     <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0f6f63"/><path d="M8 20l4-8 4 6 4-10 4 12" stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
-    <span class="brand">中文搜 GitHub</span>
+    <span class="brand">GitHub·EasyGo</span>
     <button class="tag modelbtn" id="modelBtn" type="button" title="点击切换本地模型">
       本地实时翻译 · <b id="modelLabel">%%MODEL%%</b>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
@@ -287,7 +287,7 @@ h1{font-size:26px;line-height:1.35;margin:18px 0 6px;font-weight:650;letter-spac
       <option value="ko">한국어</option>
     </select>
   </div>
-  <h1>用中文描述你要什么，直接搜英文开源项目</h1>
+  <h1>描述你需要什么，大模型帮你直接搜英文开源项目</h1>
   <div class="feedrow">
     <div class="feedtabs" role="tablist">
       <button class="feedtab active" type="button" data-feed="hot" role="tab">热榜</button>
@@ -449,7 +449,7 @@ async function loadFeed(feed, page){
     moreUpdate();
     autoMore();
   } catch(e){
-    resultsEl.innerHTML = '<div class="empty err">加载失败：' + esc(e.message) + '</div>';
+    resultsEl.innerHTML = '<div class="empty err">' + esc(i18nFmt('加载失败：{}', e.message)) + '</div>';
   }
 }
 
@@ -484,7 +484,7 @@ async function doSearch(){
     autoMore();
     loadBriefs(state.items);
   } catch(e){
-    resultsEl.innerHTML = '<div class="empty err">请求失败：' + esc(e.message) + '</div>';
+    resultsEl.innerHTML = '<div class="empty err">' + esc(i18nFmt('请求失败：{}', e.message)) + '</div>';
   } finally { goEl.disabled = false; }
 }
 
@@ -513,7 +513,7 @@ async function loadMore(){
     paint(true, before);
     loadBriefs(list);
   } catch(e){
-    moreEl.innerHTML = '<span class="err">加载失败：' + esc(e.message) + '</span>';
+    moreEl.innerHTML = '<span class="err">' + esc(i18nFmt('加载失败：{}', e.message)) + '</span>';
   } finally {
     state.loading = false;
     moreUpdate();
@@ -543,9 +543,9 @@ window.addEventListener('scroll', () => {
 });
 
 function renderStatus(d){
-  setStatus('中文「<b>' + esc(d.q) + '</b>」 → 英文检索「<b>' + esc(d.expanded) + '</b>」'
-    + (d.from_model ? '' : '（模型未参与，直接检索原文）')
-    + '　·　用时 ' + d.took + 's · ' + (d.cached ? '命中缓存' : '实时检索'));
+  setStatus(i18nFmt('中文「{}」 → 英文检索「{}」', '<b>' + esc(d.q) + '</b>', '<b>' + esc(d.expanded) + '</b>')
+    + (d.from_model ? '' : i18nFmt('（模型未参与，直接检索原文）'))
+    + i18nFmt('　·　用时 {}s · {}', d.took, d.cached ? i18nFmt('命中缓存') : i18nFmt('实时检索')));
   pillsEl.innerHTML = ((d.quick && d.quick.keywords) || []).map(k => '<span class="pill">' + esc(k) + '</span>').join('');
 }
 
@@ -621,7 +621,7 @@ let es = null;
 function startStream(name){
   if (es) { es.close(); es = null; }
   const buffer = { text: '' };
-  es = new EventSource('/api/repo_stream?name=' + encodeURIComponent(name));
+  es = new EventSource('/api/repo_stream?name=' + encodeURIComponent(name) + '&lang=' + encodeURIComponent(I18N.lang));
 
   es.addEventListener('meta', (ev) => {
     const d = JSON.parse(ev.data);
@@ -771,7 +771,7 @@ function renderReadmeToc(f){
   const toc = (f && f.readme_toc) || [];
   if (!toc.length){ area.innerHTML = ''; return; }
   area.innerHTML = '<div class="sec"><h2>README 中文翻译</h2>'
-    + '<p class="pullhint">共 ' + toc.length + ' 节。点标题逐节翻，边翻边出字；代码块与命令原样保留。</p>'
+    + '<p class="pullhint">' + esc(i18nFmt('共 {} 节。点标题逐节翻，边翻边出字；代码块与命令原样保留。', toc.length)) + '</p>'
     + '<div class="toc">' + toc.map(s => '<button data-sec="' + s.i + '">' + esc(s.title) + '</button>').join('') + '</div>'
     + '<div id="rsecbox"></div></div>';
   area.querySelectorAll('.toc button').forEach(b => {
@@ -787,7 +787,7 @@ function openSection(i){
   });
   if (esR){ esR.close(); esR = null; }
   box.innerHTML = '<div class="rsec"><div class="spinner" style="display:inline-block;vertical-align:-4px;margin-right:8px"></div>正在翻译这一节…</div>';
-  esR = new EventSource('/api/readme_sec?name=' + encodeURIComponent(state.detailName) + '&i=' + i);
+  esR = new EventSource('/api/readme_sec?name=' + encodeURIComponent(state.detailName) + '&i=' + i + '&lang=' + encodeURIComponent(I18N.lang));
   esR.addEventListener('start', () => {
     box.innerHTML = '<div class="rsec" id="rsecline"><span class="cursor"></span></div>';
   });
@@ -821,7 +821,7 @@ async function pullOpen(){
     state.pull = p;
     renderPullPanel(p);
   } catch(e){
-    if (box) box.innerHTML = '<div class="pullhint err">读取失败：' + esc(e.message) + '</div>';
+    if (box) box.innerHTML = '<div class="pullhint err">' + esc(i18nFmt('读取失败：{}', e.message)) + '</div>';
   }
 }
 
@@ -847,7 +847,7 @@ function renderPullPanel(p, hint){
     + '<div class="bar"><i id="pullbarfill"></i></div>'
     + '<div class="pullhint" id="pullhint">'
     + (hint ? hint : (p.exists ? '这个位置已经有仓库了，可以直接打开。' :
-        '只下载代码，不会执行仓库里的任何脚本，依赖需要你自己装。' + (p.disk_free_gb ? ' 该盘剩余 ' + p.disk_free_gb + ' GB。' : '')))
+        i18nFmt('只下载代码，不会执行仓库里的任何脚本，依赖需要你自己装。{}', p.disk_free_gb ? i18nFmt(' 该盘剩余 {} GB。', p.disk_free_gb) : '')))
     + '</div>'
     + '<div class="dbrw" id="dbrw" hidden></div>'
     + '</div>';
@@ -874,7 +874,7 @@ function setPullHint(t){
 async function pullSetDir(){
   const inp = document.getElementById('pullinput');
   const path = (inp && inp.value || '').trim();
-  if (!path){ setPullHint('先填一个目录，比如 E:\\repos'); return; }
+  if (!path){ setPullHint(i18nFmt('先填一个目录，比如 {}', 'E:\\repos')); return; }
   setPullHint('正在检查目录…');
   try{
     const r = await (await fetch('/api/set_dir?name=' + encodeURIComponent(state.detailName)
@@ -882,7 +882,7 @@ async function pullSetDir(){
     if (r.error){ setPullHint(r.error); return; }
     await refreshPullPanel('保存位置已设为 ' + r.base);
   } catch(e){
-    setPullHint('设置目录失败：' + e.message);
+    setPullHint(i18nFmt('设置目录失败：{}', e.message));
   }
 }
 
@@ -893,7 +893,7 @@ async function refreshPullPanel(msg){
       + '&_=' + Date.now(), {cache:'no-store'})).json();
     state.pull = p;
     renderPullPanel(p, msg);
-  }catch(e){ setPullHint('刷新失败：' + e.message); }
+  }catch(e){ setPullHint(i18nFmt('刷新失败：{}', e.message)); }
 }
 
 async function pullPick(){
@@ -918,7 +918,7 @@ async function openDirBrowser(path){
     }
     renderDirBrowser(d);
   } catch(e){
-    box.innerHTML = '<div class="pullhint err">读取失败：' + esc(e.message) + '</div>';
+    box.innerHTML = '<div class="pullhint err">' + esc(i18nFmt('读取失败：{}', e.message)) + '</div>';
   }
 }
 
@@ -928,11 +928,11 @@ function renderDirBrowser(d){
   const rows = (d.dirs || []).map(it =>
       '<div class="dbrow" data-p="' + esc(it.path) + '">'
       + '<span class="dbicon">▸</span><span class="dbname">' + esc(it.name) + '</span>'
-      + (it.free_gb ? '<span class="dbfree">' + it.free_gb + ' GB 可用</span>' : '')
+      + (it.free_gb ? '<span class="dbfree">' + esc(i18nFmt('{} GB 可用', it.free_gb)) + '</span>' : '')
       + '</div>').join('')
     || '<div class="pullhint" style="padding:0 12px 10px">这里没有子文件夹，可以直接选当前目录。</div>';
   box.innerHTML = '<div class="dbhead"><span>选择保存位置</span><span class="dbcur">'
-    + esc(d.path || '此电脑 · 先选一个盘') + (d.free_gb ? ' · ' + d.free_gb + ' GB 可用' : '') + '</span></div>'
+    + esc(d.path || '此电脑 · 先选一个盘') + (d.free_gb ? ' · ' + esc(i18nFmt('{} GB 可用', d.free_gb)) : '') + '</span></div>'
     + '<div class="dbbody">' + rows + '</div>'
     + '<div class="dbfoot">'
     + (d.path ? '<button class="btn-accent" id="dbok">用这个文件夹</button>' : '')
@@ -953,7 +953,7 @@ function renderDirBrowser(d){
         + '&path=' + encodeURIComponent(d.path) + '&_=' + Date.now(), {cache:'no-store'})).json();
       if (r.error){ setPullHint(r.error); return; }
       await refreshPullPanel('保存位置已设为 ' + r.base);
-    } catch(e){ setPullHint('设置目录失败：' + e.message); }
+    } catch(e){ setPullHint(i18nFmt('设置目录失败：{}', e.message)); }
   });
   const cl = document.getElementById('dbclose');
   if (cl) cl.addEventListener('click', () => { box.hidden = true; box.innerHTML = ''; });
@@ -980,7 +980,7 @@ function pullStart(){
     const d = JSON.parse(ev.data);
     const fill = document.getElementById('pullbarfill');
     if (fill) fill.style.width = '100%';
-    setPullHint((d.existing ? '这个目录里已经有仓库了' : '拉取完成') + (d.size_mb ? ' · 占用 ' + d.size_mb + ' MB' : '') + ' · ' + d.dir);
+    setPullHint((d.existing ? '这个目录里已经有仓库了' : '拉取完成') + (d.size_mb ? i18nFmt(' · 占用 {} MB', d.size_mb) : '') + ' · ' + d.dir);
     if (go){ go.hidden = true; }
     if (cancel) cancel.hidden = true;
     const bar = document.querySelector('.pullpanel .pullbar');
@@ -1155,7 +1155,7 @@ async function loadModels(){
       el.addEventListener('click', () => switchModel(el.dataset.name, el));
     });
   } catch(e){
-    mlist.innerHTML = '<div class="mempty err">读取失败：' + esc(e.message) + '</div>';
+    mlist.innerHTML = '<div class="mempty err">' + esc(i18nFmt('读取失败：{}', e.message)) + '</div>';
   }
 }
 
@@ -1221,6 +1221,16 @@ function i18nTail(rest){
   }).join(' · ');
 }
 
+/* 前缀表里的键可能带空格，正文也可能带空格：按"非空白字符数"切，别按字符数切 */
+function i18nCutPrefix(raw, nKey){
+  const body = (raw || '').trim();
+  let seen = 0, i = 0;
+  for (; i < body.length && seen < nKey.length; i++){
+    if (!/\s/.test(body[i])) seen++;
+  }
+  return body.slice(i);
+}
+
 function i18nText(raw){
   if (!I18N_ON || !raw) return null;
   const key = i18nNorm(raw);
@@ -1229,16 +1239,29 @@ function i18nText(raw){
   if (hit) return hit;
   const pre = I18N.prefix || {};
   for (const p in pre){
-    if (key.startsWith(i18nNorm(p))){
-      const body = raw.trim();
-      if (body.startsWith(p)) return (pre[p] + ' ' + i18nTail(body.slice(p.length))).replace(/\s+/g, ' ').trim();
+    const np = i18nNorm(p);
+    if (!np) continue;
+    if (key.startsWith(np)){
+      const rest = i18nCutPrefix(raw, np);
+      return (pre[p] + ' ' + i18nTail(rest)).replace(/\s+/g, ' ').trim();
     }
   }
   return null;
 }
 
-function i18nTranslateDom(){
-  if (!I18N_ON) return;
+/* 带数字/路径的动态句：模板键里用 {} 占位，按语言换词序 */
+function i18nFmt(s){
+  const args = Array.prototype.slice.call(arguments, 1);
+  if (!I18N_ON) {
+    let j = 0;
+    return s.replace(/\{\}/g, () => String(args[j++]));
+  }
+  const tpl = I18N.dict[i18nNorm(s)] || s;
+  let i = 0;
+  return tpl.replace(/\{\}/g, () => String(args[i++]));
+}
+
+function i18nTranslateDom(){  if (!I18N_ON) return;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
